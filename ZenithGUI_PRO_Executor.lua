@@ -1,5 +1,11 @@
 --[[
-	Zenith Soul HUB | GUI v8
+	ZENITH PRO | EXECUTOR EDITION
+	โหลดผ่าน Executor ด้วย:
+	loadstring(game:HttpGet("YOUR_RAW_GITHUB_URL"))()
+	UI library only; game-specific actions must be connected by the user's own callbacks.
+]]
+--[[
+	ZENITH PRO | GUI v9
 	- แถวฟังก์ชันแบบ XT: เรียบ ไม่มีกล่องต่อแถว คั่นด้วยเส้นบางๆ ชื่ออยู่ซ้าย ตัวควบคุมอยู่ขวา
 	- Dropdown เปิดเป็น "ตารางเลือกไอเท็ม" 2 คอลัมน์: รูปอยู่ซ้าย ชื่ออยู่ขวา (มีคำอธิบายใต้ชื่อได้) เลื่อนลงได้ไม่จำกัดแถว
 	  ตัวเลือกไหนไม่มีรูปก็ไม่เว้นที่ว่าง | เลือกอันเดียวหรือหลายอัน | ไม่มีเครื่องหมายติ๊ก ใช้ขอบสีเน้นแทน
@@ -34,20 +40,13 @@
 		CFG.ImageResolver ตั้งไว้ตัวเดียวใช้กับทุก Dropdown ก็ได้ (ดูใน CFG ด้านล่าง)
 ]]
 
---[[
-    EXECUTOR USAGE:
-    1) Upload this file to a GitHub repository.
-    2) Run from an executor with:
-       loadstring(game:HttpGet("RAW_GITHUB_URL"))()
-    This file creates the UI immediately and returns its UI API.
-]]
-
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local MarketplaceService = game:GetService("MarketplaceService")
+local HttpService = game:GetService("HttpService")
 
 ----------------------------------------------------------------
 -- CONFIG
@@ -65,7 +64,8 @@ local CFG = {
 	Theme = nil,
 	SelectedFmt = "เลือกไว้ %d อย่าง",
 	ImageResolver = nil,           -- function(name) return "rbxassetid://..." or nil end  (ใช้กับทุก Dropdown ที่ไม่ได้ใส่ Image เอง)
-	Stats = {Equipped = 8, Units = 359},
+	Stats = {UnderMap = "300+", FPS = "--"},
+	OnResetItemTimer = nil, -- กำหนด callback จากสคริปต์เกมของคุณเอง
 	Tabs = {
 		{"Home", "home"}, {"Players", "users"}, {"Visuals", "eye"}, {"Macro", "bot"},
 		{"Units", "sparkles"}, {"Dungeon", "swords"}, {"Settings", "settings"},
@@ -95,10 +95,20 @@ local THEMES = {
 		btn = rgb(34, 56, 90), btnLine = rgb(78, 114, 156), btnHover = rgb(42, 68, 106), btnHoverLine = rgb(144, 194, 238), off = rgb(56, 80, 116),
 		logoA = rgb(160, 198, 230), logoB = rgb(44, 70, 104), coverA = rgb(44, 68, 104), coverB = rgb(13, 22, 38),
 	},
+
+	Autumn = {
+		win = rgb(28, 19, 15), winA = rgb(54, 34, 23), winB = rgb(22, 15, 13),
+		top = rgb(45, 29, 21), card = rgb(48, 34, 26), cardLine = rgb(105, 70, 46),
+		topLine = rgb(116, 76, 45), footLine = rgb(83, 55, 37), tabOn = rgb(76, 48, 30), tabLine = rgb(211, 157, 104),
+		text = rgb(255, 244, 230), sub = rgb(210, 180, 148), mute = rgb(160, 128, 100),
+		accent = rgb(242, 145, 56), glow = rgb(199, 103, 38), border = rgb(115, 72, 43),
+		btn = rgb(61, 42, 31), btnLine = rgb(105, 72, 48), btnHover = rgb(78, 51, 34), btnHoverLine = rgb(165, 105, 58), off = rgb(82, 57, 40),
+		logoA = rgb(226, 139, 57), logoB = rgb(91, 48, 28), coverA = rgb(105, 61, 31), coverB = rgb(37, 23, 17),
+	},
 }
-local THEME_META = {Zenith = {"star", "Brand dark"}, Winter = {"snowflake", "Clean frost"}}
-local THEME_ORDER = {"Zenith", "Winter"}
-local THEME_FILE = "ZenithSoulHUB_theme.txt"
+local THEME_META = {Zenith = {"star", "Brand dark"}, Winter = {"snowflake", "Clean frost"}, Autumn = {"sparkles", "Falling leaves"}}
+local THEME_ORDER = {"Zenith", "Winter", "Autumn"}
+local THEME_FILE = "ZenithPRO_theme.txt"
 
 local Glass = math.clamp(CFG.Glass, 0, 0.85)
 local C = {}
@@ -161,7 +171,7 @@ local function getParent()
 	if ok and ui then return ui end
 	return Players.LocalPlayer:WaitForChild("PlayerGui")
 end
-local old = getParent():FindFirstChild("ZenithSoulGUI")
+local old = getParent():FindFirstChild("ZenithPRO_GUI")
 if old then old:Destroy() end
 
 local function tweenE(o, t, p, style, dir)
@@ -248,7 +258,7 @@ local function isMove(i) return i.UserInputType == Enum.UserInputType.MouseMovem
 ----------------------------------------------------------------
 -- ROOT  (Root > Main[พื้นหลัง+ตัดขอบ] > Inner[ขนาดคงที่])
 ----------------------------------------------------------------
-local Gui = new("ScreenGui", {Name = "ZenithSoulGUI", ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, IgnoreGuiInset = true, DisplayOrder = 999})
+local Gui = new("ScreenGui", {Name = "ZenithPRO_GUI", ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, IgnoreGuiInset = true, DisplayOrder = 999})
 Gui.Parent = getParent()
 
 local conns = {}
@@ -311,6 +321,20 @@ local snowOn, decoOn = true, true
 local AuroraLayer = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 0, Visible = false, Parent = Inner})
 local SnowLayer = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 0, Visible = false, Parent = Inner})
 local FrostLayer = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 60, Visible = false, Parent = Inner})
+local LeafLayer = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 1, Visible = false, Parent = Inner})
+
+local leaves = {}
+local leafColors = {rgb(214, 105, 45), rgb(235, 155, 54), rgb(164, 77, 38), rgb(190, 126, 54)}
+for i = 1, 14 do
+	local size = math.random(5, 9)
+	local leaf = new("Frame", {
+		Size = UDim2.fromOffset(size, math.max(3, math.floor(size * 0.62))),
+		BackgroundColor3 = leafColors[math.random(1, #leafColors)],
+		BackgroundTransparency = 0.18 + math.random() * 0.25,
+		BorderSizePixel = 0, Parent = LeafLayer,
+	}, {round(3)})
+	leaves[i] = {f = leaf, x = math.random(0, L.W), y = math.random(-L.H, L.H), v = math.random(10, 22), sway = math.random(8, 22), phase = math.random() * 6, spin = math.random(-90, 90)}
+end
 
 local function blob(cx, cy, r, col)
 	for i = 1, 5 do
@@ -340,9 +364,11 @@ for i = 1, 18 do
 end
 local function fxUpdate()
 	local w = ThemeName == "Winter"
+	local a = ThemeName == "Autumn"
 	SnowLayer.Visible = snowOn and w
 	AuroraLayer.Visible = decoOn and w
 	FrostLayer.Visible = decoOn and w
+	LeafLayer.Visible = a and decoOn
 end
 bind(RunService.Heartbeat, function(dt)
 	if not SnowLayer.Visible or not Root.Visible then return end
@@ -351,6 +377,20 @@ bind(RunService.Heartbeat, function(dt)
 		s.y += s.v * dt
 		if s.y > L.H + 6 then s.y = -6; s.x = math.random(0, L.W) end
 		s.f.Position = UDim2.fromOffset(s.x + math.sin(t * 0.8 + s.ph) * s.amp, s.y)
+	end
+end)
+
+bind(RunService.Heartbeat, function(dt)
+	if not LeafLayer.Visible or not Root.Visible then return end
+	local t = os.clock()
+	for _, leaf in ipairs(leaves) do
+		leaf.y += leaf.v * dt
+		if leaf.y > L.H + 12 then
+			leaf.y = -12
+			leaf.x = math.random(0, L.W)
+		end
+		leaf.f.Position = UDim2.fromOffset(leaf.x + math.sin(t * 0.65 + leaf.phase) * leaf.sway, leaf.y)
+		leaf.f.Rotation = math.sin(t + leaf.phase) * leaf.spin
 	end
 end)
 
@@ -1140,6 +1180,48 @@ local function Container(host, onAdd, scope, factory)
 		return obj
 	end
 
+	function self:ProgressBar(o)
+		added()
+		local min, max = o.Min or 0, o.Max or 100
+		local value = math.clamp(o.Default or min, min, max)
+		local row = new("Frame", {
+			LayoutOrder = nextOrder(), Size = UDim2.new(1, 0, 0, ROW + 22),
+			BackgroundTransparency = 1, Parent = host,
+		})
+		nameLabel(row, o.Name or "Progress", o.Help, 2, 0, 18)
+		local valueLabel = T{
+			p = row, t = "", f = mono(W_.Medium), s = 10, c = "accent",
+			xa = Enum.TextXAlignment.Right, pos = UDim2.new(1, -2, 0, 0),
+			sz = UDim2.new(0.45, 0, 0, 18)
+		}
+		local trackBar = new("Frame", {
+			Size = UDim2.new(1, -4, 0, 6), Position = UDim2.fromOffset(2, ROW + 8),
+			Bg = "off", BorderSizePixel = 0, Parent = row,
+		}, {round("full")})
+		local fillBar = new("Frame", {
+			Size = UDim2.fromScale(0, 1), Bg = "accent", BorderSizePixel = 0, Parent = trackBar,
+		}, {round("full")})
+		local function render()
+			local pct = max > min and math.clamp((value - min) / (max - min), 0, 1) or 0
+			fillBar.Size = UDim2.fromScale(pct, 1)
+			valueLabel.Text = o.Format and tostring(o.Format(value, max)) or (tostring(value) .. " / " .. tostring(max))
+		end
+		render()
+		local obj = {Instance = row}
+		function obj.Get() return value end
+		function obj.Set(v)
+			value = math.clamp(tonumber(v) or min, min, max)
+			render()
+		end
+		function obj.SetMax(v)
+			max = math.max(tonumber(v) or max, min)
+			value = math.clamp(value, min, max)
+			render()
+		end
+		track(o.Name, row)
+		return obj
+	end
+
 	function self:InfoRow(o)
 		added()
 		local row = flatRow("Frame", ROW)
@@ -1545,8 +1627,8 @@ local function statCard(key, caption, value, o)
 	StatLabels[key] = {label = v, dot = dotObj, place = place}
 end
 statCard("Session", "Session Time", "00:00:00", {mono = true})
-statCard("Equipped", "Equipped", tostring(CFG.Stats.Equipped))
-statCard("Units", "Units", tostring(CFG.Stats.Units), {tag = "Unlocked"})
+statCard("UnderMap", "ใต้แมพ", tostring(CFG.Stats.UnderMap))
+statCard("FPS", "FPS", "--", {green = true, dot = true})
 statCard("Ping", "Ping", "--", {green = true, dot = true})
 
 -- การ์ด Current Game อยู่แถวที่ 1 ฝั่งซ้าย (ขนาดตายตัว 218)
@@ -1568,7 +1650,7 @@ end)
 
 local Cover = new("ImageLabel", {
 	Size = UDim2.new(1, -28, 0, 156), Position = UDim2.fromOffset(14, 48), BackgroundColor3 = Color3.new(1, 1, 1),
-	Image = CFG.GameImage or ("rbxthumb://type=GameIcon&id=" .. tostring(game.GameId) .. "&w=512&h=512"),
+	Image = CFG.GameImage or ("rbxthumb://type=GameThumbnail&id=" .. tostring(game.PlaceId) .. "&w=768&h=432"),
 	ScaleType = Enum.ScaleType.Crop, BorderSizePixel = 0, ClipsDescendants = true, Parent = GameCard,
 }, {round(L.R_COVER)})
 do
@@ -1582,7 +1664,7 @@ new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 
 local Tag = new("Frame", {Size = UDim2.fromOffset(56, 18), Position = UDim2.fromOffset(12, 96), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.3, BorderSizePixel = 0, Parent = Cover},
 	{round(5), stroke(Color3.new(1, 1, 1), 1, 0.9)})
 T{p = Tag, t = "ROBLOX", f = mono(W_.Medium), s = 10, c = rgb(232, 235, 242), xa = Enum.TextXAlignment.Center}
-local GameTitle = T{p = Cover, t = CFG.GameName or "Loading...", f = sans(W_.Bold), s = 20, c = Color3.new(1, 1, 1), pos = UDim2.fromOffset(12, 118), sz = UDim2.new(1, -24, 0, 28)}
+local GameTitle = T{p = Cover, t = CFG.GameName or "Loading...", f = sans(W_.Bold), s = 17, c = Color3.new(1, 1, 1), pos = UDim2.fromOffset(12, 118), sz = UDim2.new(1, -24, 0, 28)}
 task.spawn(function()
 	if CFG.GameName then return end
 	local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end)
@@ -1664,6 +1746,41 @@ do
 end
 
 ----------------------------------------------------------------
+-- DUNGEON (UI CONTROL + GAME CALLBACK HOOK)
+----------------------------------------------------------------
+do
+	local dng = Pages.Dungeon
+	local resetGroup = dng.Left:Group("Reset Tools", "refresh-cw")
+	local infoGroup = dng.Right:Group("Dungeon Status", "info")
+	local resetStatus = infoGroup:InfoRow{Name = "สถานะรีเซ็ต", Value = "ยังไม่เชื่อมระบบเกม"}
+
+	resetGroup:Button{
+		Name = "รีเซ็ตเวลาไอเทม",
+		Description = "เรียก callback ที่เชื่อมกับระบบเกม",
+		Icon = "rotate-ccw",
+		Style = "danger",
+		Callback = function()
+			if type(CFG.OnResetItemTimer) == "function" then
+				local ok, err = pcall(CFG.OnResetItemTimer)
+				if ok then
+					resetStatus.Set("ส่งคำสั่งแล้ว")
+					notify({Title = "Reset Timer", Content = "เรียก callback สำเร็จ"})
+				else
+					resetStatus.Set("เกิดข้อผิดพลาด")
+					notify({Title = "Reset Timer", Content = tostring(err)})
+				end
+			else
+				notify({Title = "ยังไม่ได้เชื่อม", Content = "ต้องกำหนด UI.Config.OnResetItemTimer จากสคริปต์เกมก่อน"})
+			end
+		end
+	}
+	infoGroup:Paragraph{
+		Title = "การเชื่อมต่อ",
+		Content = "ปุ่มนี้เป็น UI hook เท่านั้น ไลบรารีไม่สามารถเดา RemoteEvent หรือระบบคูลดาวน์ของแต่ละเกมได้"
+	}
+end
+
+----------------------------------------------------------------
 -- SETTINGS (ใช้งานได้จริง)
 ----------------------------------------------------------------
 function setTheme(name)
@@ -1687,8 +1804,76 @@ do
 	ap:Slider{Name = "Transparency", Help = "ความโปร่งของพื้นหลัง การ์ด และปุ่ม", Min = 0, Max = 80, Step = 5, Default = math.floor(Glass * 100 + 0.5), Suffix = "%",
 		Callback = function(v) setGlass(v / 100) end}
 	ap:Toggle{Name = "Snowfall", Help = "หิมะตกช้าๆ (เฉพาะธีม Winter)", Default = true, Callback = function(v) snowOn = v; fxUpdate() end}
+	ap:Toggle{Name = "Falling leaves", Help = "ใบไม้ร่วง (เฉพาะธีม Autumn)", Default = true, Callback = function(v) decoOn = v; fxUpdate() end}
 	ap:Toggle{Name = "Frost effects", Help = "แสงออโรร่าและขอบกระจก (เฉพาะธีม Winter)", Default = true, Callback = function(v) decoOn = v; fxUpdate() end}
 	ap:Toggle{Name = "Window glow", Default = true, Callback = function(v) glowOn = v; ringsVisible(true) end}
+
+	local files = st.Left:Group("Profile Files", "file-plus")
+	local pathInput = files:Input{
+		Name = "ตำแหน่งไฟล์",
+		Default = "ZenithPRO/profile.json",
+		Placeholder = "folder/name.json"
+	}
+	files:ButtonRow{
+		{Name = "สร้าง / บันทึก", Icon = "save", Style = "primary", Callback = function()
+			local path = tostring(pathInput.Get() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+			if path == "" or path:find("..", 1, true) then
+				notify({Title = "File", Content = "กรุณาระบุตำแหน่งไฟล์ที่ถูกต้อง"})
+				return
+			end
+			if not writefile then
+				notify({Title = "File", Content = "Executor นี้ไม่มี writefile"})
+				return
+			end
+			local folder = path:match("(.+)/[^/]+$")
+			local ok, err = pcall(function()
+				if folder and makefolder then
+					local exists = false
+					if isfolder then pcall(function() exists = isfolder(folder) end) end
+					if not exists then pcall(makefolder, folder) end
+				end
+				local data = {
+					Version = 1,
+					Theme = ThemeName,
+					Glass = Glass,
+					Scale = Scale.Scale,
+					ToggleKey = CFG.ToggleKey and CFG.ToggleKey.Name or "RightShift",
+				}
+				writefile(path, HttpService:JSONEncode(data))
+			end)
+			if ok then notify({Title = "File", Content = "บันทึกแล้ว: " .. path})
+			else notify({Title = "File Error", Content = tostring(err)}) end
+		end},
+		{Name = "โหลดไฟล์", Icon = "folder-open", Callback = function()
+			local path = tostring(pathInput.Get() or "")
+			if not (isfile and readfile and isfile(path)) then
+				notify({Title = "File", Content = "ไม่พบไฟล์: " .. path})
+				return
+			end
+			local ok, err = pcall(function()
+				local data = HttpService:JSONDecode(readfile(path))
+				if data.Theme and THEMES[data.Theme] then setTheme(data.Theme) end
+				if tonumber(data.Glass) then setGlass(data.Glass) end
+				if tonumber(data.Scale) then CFG.AutoScale = false; Scale.Scale = math.clamp(data.Scale, 0.5, 2) end
+				if data.ToggleKey and Enum.KeyCode[data.ToggleKey] then CFG.ToggleKey = Enum.KeyCode[data.ToggleKey] end
+			end)
+			if ok then notify({Title = "File", Content = "โหลดโปรไฟล์แล้ว"})
+			else notify({Title = "File Error", Content = tostring(err)}) end
+		end}
+	}
+	files:Button{
+		Name = "รีเซ็ตหน้าตาเริ่มต้น",
+		Icon = "rotate-ccw",
+		Callback = function()
+			setTheme("Zenith")
+			setGlass(0.5)
+			CFG.AutoScale = true
+			Scale.Scale = autoScale()
+			CFG.ToggleKey = Enum.KeyCode.RightShift
+			Root.Position = UDim2.fromScale(0.5, 0.5)
+			notify({Title = "Reset", Content = "คืนค่าหน้าตาเริ่มต้นแล้ว"})
+		end
+	}
 
 	local win = st.Right:Group("Window", "sliders-horizontal")
 	win:Slider{Name = "UI Scale", Min = 0.6, Max = 1.5, Step = 0.05, Default = math.floor(Scale.Scale * 20 + 0.5) / 20,
@@ -1729,6 +1914,23 @@ task.spawn(function()
 			s.label.Text = tostring(ping); s.label.TextColor3 = col; s.dot.BackgroundColor3 = col
 		end
 		task.wait(1)
+	end
+end)
+
+local fpsFrames, fpsElapsed = 0, 0
+bind(RunService.RenderStepped, function(dt)
+	fpsFrames += 1
+	fpsElapsed += dt
+	if fpsElapsed >= 1 then
+		local fps = math.floor(fpsFrames / fpsElapsed + 0.5)
+		local s = StatLabels.FPS
+		if s then
+			local col = fps >= 50 and C.ok or (fps >= 30 and C.warn or C.bad)
+			s.label.Text = tostring(fps)
+			s.label.TextColor3 = col
+			if s.dot then s.dot.BackgroundColor3 = col end
+		end
+		fpsFrames, fpsElapsed = 0, 0
 	end
 end)
 
@@ -1786,16 +1988,21 @@ local function setShade(v, instant)
 end
 
 local folding = false
+local transitionToken = 0
 local function foldClose(toPill)
 	if folding or not Root.Visible then return end
 	folding = true
+	transitionToken += 1
+	local myToken = transitionToken
 	closeModal(true); hideTip()
 	if shaded then setShade(false, true) end
 	ringsVisible(false)
 	local t1 = TweenService:Create(Main, TweenInfo.new(0.36, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut), {Size = UDim2.new(1, 0, 0, 2)})
 	t1:Play(); t1.Completed:Wait()
+	if not Gui.Parent or myToken ~= transitionToken then folding = false; return end
 	local t2 = TweenService:Create(Main, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 2)})
 	t2:Play(); t2.Completed:Wait()
+	if not Gui.Parent or myToken ~= transitionToken then folding = false; return end
 	Root.Visible = false
 	if toPill then pillShow(true) end
 	folding = false
@@ -1803,20 +2010,25 @@ end
 local function foldOpen()
 	if folding or Root.Visible then return end
 	folding = true
+	transitionToken += 1
+	local myToken = transitionToken
 	pillShow(false)
 	Main.Size = UDim2.new(0, 0, 0, 2)
 	Root.Visible = true
 	local t1 = TweenService:Create(Main, TweenInfo.new(0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 2)})
 	t1:Play(); t1.Completed:Wait()
+	if not Gui.Parent or myToken ~= transitionToken then folding = false; return end
 	local t2 = TweenService:Create(Main, TweenInfo.new(0.42, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = UDim2.fromScale(1, 1)})
 	t2:Play(); t2.Completed:Wait()
+	if not Gui.Parent or myToken ~= transitionToken then folding = false; return end
 	ringsVisible(true)
 	folding = false
 end
 Pill.MouseButton1Click:Connect(function() task.spawn(foldOpen) end)
 
 BtnRed.MouseButton1Click:Connect(function()
-	task.spawn(function() foldClose(false); Gui:Destroy() end)
+	-- Close hides the window but keeps the pill so the user can reopen it.
+	task.spawn(foldClose, true)
 end)
 BtnAmber.MouseButton1Click:Connect(function() task.spawn(foldClose, true) end)
 BtnGreen.MouseButton1Click:Connect(function() setShade(not shaded) end)
@@ -1861,6 +2073,13 @@ end)
 return {
 	Gui = Gui, Root = Root, Tabs = Pages, Colors = C, Icons = LUCIDE, Themes = THEMES, Config = CFG,
 	Select = select_, SetStat = setStat, AddTab = addTab, SetTheme = setTheme, SetGlass = setGlass, Notify = notify,
+	SetGameInfo = function(name, image)
+		if name and GameTitle then GameTitle.Text = tostring(name) end
+		if image and Cover then Cover.Image = tostring(image) end
+	end,
+	SetResetItemTimerCallback = function(callback)
+		CFG.OnResetItemTimer = callback
+	end,
 	Hide = function() task.spawn(foldClose, false) end, Show = function() task.spawn(foldOpen) end,
 	SetScale = function(s) CFG.AutoScale = false; Scale.Scale = s end,
 	Destroy = function() Gui:Destroy() end,
