@@ -1,5 +1,5 @@
 --[[
-	Zenith UI Library  v1.1.0
+	Zenith UI Library  v1.2.0
 	UI library สำหรับ Roblox (เขียนด้วย Luau) | คู่มือเต็มอยู่ใน README.md
 
 	local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_NAME/ZenithUI/main/ZenithUI.lua"))()
@@ -19,7 +19,7 @@ local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
 local MarketplaceService = game:GetService("MarketplaceService")
 
-local Library = {Version = "1.1.0"}
+local Library = {Version = "1.2.0"}
 
 ----------------------------------------------------------------
 -- SHARED: THEMES / ICONS / HELPERS (ใช้ร่วมกันทุกหน้าต่าง)
@@ -78,6 +78,53 @@ local LUCIDE = {
 Library.Themes = THEMES
 Library.Icons = LUCIDE
 
+-- โค้ดแชร์ค่าตั้ง: "ZUI1:" + base64(JSON)
+local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local B64IDX = {}
+for i = 1, 64 do B64IDX[B64:sub(i, i)] = i - 1 end
+local function b64encode(data)
+	local out = {}
+	for i = 1, #data, 3 do
+		local a, b, c = string.byte(data, i, i + 2)
+		local n = a * 65536 + (b or 0) * 256 + (c or 0)
+		local c1 = bit32.rshift(n, 18) % 64
+		local c2 = bit32.rshift(n, 12) % 64
+		local c3 = bit32.rshift(n, 6) % 64
+		local c4 = n % 64
+		out[#out + 1] = B64:sub(c1 + 1, c1 + 1) .. B64:sub(c2 + 1, c2 + 1) .. (b and B64:sub(c3 + 1, c3 + 1) or "=") .. (c and B64:sub(c4 + 1, c4 + 1) or "=")
+	end
+	return table.concat(out)
+end
+local function b64decode(str)
+	str = (str:gsub("[^%w%+/=]", ""))
+	local out = {}
+	for i = 1, #str, 4 do
+		local c1, c2, c3, c4 = str:sub(i, i), str:sub(i + 1, i + 1), str:sub(i + 2, i + 2), str:sub(i + 3, i + 3)
+		local n = (B64IDX[c1] or 0) * 262144 + (B64IDX[c2] or 0) * 4096 + (B64IDX[c3] or 0) * 64 + (B64IDX[c4] or 0)
+		out[#out + 1] = string.char(bit32.rshift(n, 16) % 256)
+		if c3 ~= "=" and c3 ~= "" then out[#out + 1] = string.char(bit32.rshift(n, 8) % 256) end
+		if c4 ~= "=" and c4 ~= "" then out[#out + 1] = string.char(n % 256) end
+	end
+	return table.concat(out)
+end
+function Library.Encode(tbl)
+	return "ZUI1:" .. b64encode(HttpService:JSONEncode(tbl))
+end
+function Library.Decode(code)
+	code = tostring(code or "")
+	code = (code:gsub("^%s+", ""))
+	code = (code:gsub("%s+$", ""))
+	if code:sub(1, 5) ~= "ZUI1:" then return nil, "โค้ดไม่ถูกต้อง (ต้องขึ้นต้นด้วย ZUI1:)" end
+	local ok, data = pcall(function() return HttpService:JSONDecode(b64decode(code:sub(6))) end)
+	if not ok or type(data) ~= "table" then return nil, "อ่านโค้ดไม่ได้ (โค้ดอาจไม่ครบหรือเสียหาย)" end
+	return data
+end
+local function copyText(t)
+	local fn = setclipboard or toclipboard or (syn and syn.write_clipboard)
+	if fn then return (pcall(fn, t)) end
+	return false
+end
+
 local L = {
 	W = 660, H = 420, TOP = 46, NAV = 56, FOOT = 34, PAD = 18, GAP = 14,
 	R_WIN = 14, R_CARD = 12, R_TAB = 11, R_COVER = 12,
@@ -115,7 +162,7 @@ local function getParent()
 	return Players.LocalPlayer:WaitForChild("PlayerGui")
 end
 
-local LOOSE = {"Button", "ButtonRow", "Toggle", "Slider", "Dropdown", "Input", "Keybind", "ColorPicker", "InfoRow", "Hint", "ThemePicker", "Label", "Paragraph", "Section", "Divider", "FilePicker", "ConfigManager"}
+local LOOSE = {"Button", "ButtonRow", "Toggle", "Slider", "Dropdown", "Input", "Keybind", "ColorPicker", "InfoRow", "Hint", "ThemePicker", "Label", "Paragraph", "Section", "Divider", "FilePicker", "ConfigManager", "ConfigShare"}
 
 ----------------------------------------------------------------
 -- CREATE WINDOW
@@ -727,6 +774,31 @@ function Library.CreateWindow(a, b)
 		return (pcall(delfile, cfgPath(name)))
 	end
 
+	local function exportCode(extraFn)
+		local data = {v = 1, name = CFG.Name, flags = {}}
+		for k, e in pairs(flags) do
+			local ok, v = pcall(e.get)
+			if ok then data.flags[k] = v end
+		end
+		if extraFn then
+			local ok, ex = pcall(extraFn)
+			if ok then data.extra = ex end
+		end
+		return Library.Encode(data)
+	end
+	local function importCode(code, importFn)
+		local data, err = Library.Decode(code)
+		if not data then return false, err end
+		if type(data.flags) ~= "table" then return false, "โค้ดนี้ไม่มีข้อมูลค่าตั้ง" end
+		local n = 0
+		for k, v in pairs(data.flags) do
+			local e = flags[k]
+			if e and pcall(e.set, v) then n += 1 end
+		end
+		if data.extra ~= nil and importFn then pcall(importFn, data.extra) end
+		return true, n
+	end
+
 	local function pal(style)
 		if style == "primary" then
 			return {bg = C.card:Lerp(C.accent, 0.16), line = C.card:Lerp(C.accent, 0.45), fg = C.accent, hbg = C.card:Lerp(C.accent, 0.26), hline = C.card:Lerp(C.accent, 0.75)}
@@ -1284,7 +1356,8 @@ function Library.CreateWindow(a, b)
 		function self:ConfigManager(o)
 			o = o or {}
 			if not fsOK then
-				self:Label("Executor นี้ไม่รองรับระบบไฟล์ (writefile / readfile) จึงใช้ Config ไม่ได้")
+				self:Label("Executor นี้ไม่รองรับระบบไฟล์ (writefile / readfile) จึงใช้ไฟล์ Config ไม่ได้ (ยังแชร์เป็นโค้ดได้)")
+				if o.Share ~= false then self:ConfigShare{Export = o.Export, Import = o.Import} end
 				return nil
 			end
 			local picker = self:FilePicker{Name = o.PickerName or "Config", Help = "เลือกไฟล์ที่เคยบันทึกไว้", Folder = cfgFolder(), Extension = ".json"}
@@ -1352,7 +1425,38 @@ function Library.CreateWindow(a, b)
 				{Name = "Save", Callback = save},
 				{Name = "Delete", Icon = "x", Style = "danger", Callback = delete},
 			}
+			if o.Share ~= false then self:ConfigShare{Export = o.Export, Import = o.Import} end
 			return {Picker = picker, Input = nameBox}
+		end
+
+		function self:ConfigShare(o)
+			o = o or {}
+			self:Section(o.Title or "Share code")
+			local codeBox = self:Input{Name = o.InputName or "Paste code", Placeholder = "วางโค้ดที่ได้รับ..."}
+			local function toast(msg, kind) notify{Title = "Share", Content = msg, Type = kind or "info", Duration = 3.5} end
+			self:ButtonRow{
+				{Name = "Copy code", Icon = "check", Callback = function()
+					local code = exportCode(o.Export)
+					if copyText(code) then
+						toast("คัดลอกโค้ดแล้ว (" .. #code .. " ตัวอักษร) ส่งให้คนอื่นวางแล้วกด Import ได้เลย", "success")
+					else
+						print("[ZenithUI] share code:\n" .. code)
+						toast("Executor ไม่รองรับคลิปบอร์ด จึงพิมพ์โค้ดไว้ใน Console (F9)", "warning")
+					end
+				end},
+				{Name = "Import", Icon = "refresh-cw", Style = "primary", Callback = function()
+					local code = tostring(codeBox.Get() or "")
+					if (code:gsub("%s", "")) == "" then toast("วางโค้ดในช่องก่อน", "warning"); return end
+					local ok, res = importCode(code, o.Import)
+					if ok then
+						toast("นำเข้าสำเร็จ ตั้งค่าให้ " .. res .. " รายการ", "success")
+						codeBox.Set("")
+					else
+						toast(tostring(res), "error")
+					end
+				end},
+			}
+			return {Input = codeBox}
 		end
 
 		function self:Label(text)
@@ -1412,7 +1516,7 @@ function Library.CreateWindow(a, b)
 			local gscope = {items = {}}
 			local headless = opts.Headless == true
 			local gt = {title = tostring(title or ""):lower(), scope = gscope, open = headless or not opts.Closed}
-			local card, content, head, body, chev
+			local card, content, head, body, chev, slot
 
 			if nested then
 				card = new("Frame", {LayoutOrder = nextOrder(), Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = host},
@@ -1427,7 +1531,8 @@ function Library.CreateWindow(a, b)
 				body = new("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1},
 					{new("UIPadding", {PaddingBottom = UDim.new(0, 4)}), new("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder})})
 			else
-				card, content = factory()
+				local _st
+				card, content, _st, slot = factory()
 				if not headless then
 					head = new("TextButton", {LayoutOrder = 0, Size = UDim2.new(1, 0, 0, ROW + 8), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Parent = content})
 					new("Frame", {Size = UDim2.fromOffset(3, 14), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 12, 0.5, 0), Bg = "accent", BorderSizePixel = 0, Parent = head}, {round("full")})
@@ -1451,13 +1556,24 @@ function Library.CreateWindow(a, b)
 				setOpen = so
 			end
 			gt.frame = card
+			if slot and not headless then slot.collapsed = not gt.open end
 			function gt.refresh()
 				setOpen(gt.open or SearchQuery ~= "", true)
+				if slot and not headless then slot.collapsed = not (gt.open or SearchQuery ~= ""); slot.sync() end
 				if chev then chev.Rotation = gt.open and 90 or 0 end
 			end
 			if head then
 				head.MouseButton1Click:Connect(function()
 					gt.open = not gt.open
+					if slot then
+						slot.token = (slot.token or 0) + 1
+						local my = slot.token
+						slot.collapsed = true   -- ระหว่างพับ/กาง การ์ดหดตามเนื้อหา
+						if gt.open then
+							task.delay(0.35, function() if slot.token == my and gt.open then slot.collapsed = false; slot.sync() end end)
+						end
+						slot.sync()
+					end
 					setOpen(gt.open or SearchQuery ~= "")
 					tweenE(chev, 0.26, {Rotation = gt.open and 90 or 0}, Enum.EasingStyle.Quint)
 				end)
@@ -1505,6 +1621,17 @@ function Library.CreateWindow(a, b)
 			if s and s.card.Visible then h = math.max(h, s.inner.AbsoluteSize.Y / Scale.Scale) end
 		end
 		row.frame.Size = UDim2.new(1, 0, 0, h)
+		-- การ์ดที่พับอยู่ให้หดเท่าหัวการ์ด (ไม่ยืดตามการ์ดข้างๆ)
+		for _, key in ipairs({"L", "R"}) do
+			local s = row[key]
+			if s then
+				if s.collapsed and s.card.Visible then
+					s.card.Size = UDim2.new(0.5, -L.GAP / 2, 0, s.inner.AbsoluteSize.Y / Scale.Scale)
+				else
+					s.card.Size = UDim2.new(0.5, -L.GAP / 2, 1, 0)
+				end
+			end
+		end
 	end
 
 	local function makePage(name, iconName)
@@ -1540,12 +1667,14 @@ function Library.CreateWindow(a, b)
 			}, {round(L.R_CARD), st})
 			local inner = new("Frame", {
 				Size = UDim2.new(1, 0, 0, fixedH or 0), AutomaticSize = fixedH and Enum.AutomaticSize.None or Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = card,
-			}, {new("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder})})
-			row[which] = {card = card, inner = inner}
+			}, fixedH and {} or {new("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder})})
+			local slot = {card = card, inner = inner, collapsed = false}
+			slot.sync = function() syncRow(row) end
+			row[which] = slot
 			inner:GetPropertyChangedSignal("AbsoluteSize"):Connect(function() syncRow(row) end)
 			card:GetPropertyChangedSignal("Visible"):Connect(function() syncRow(row) end)
 			task.defer(function() syncRow(row) end)
-			return card, inner, st
+			return card, inner, st, slot
 		end
 		local function sideFactory(which)
 			local count = 0
@@ -1883,6 +2012,8 @@ function Library.CreateWindow(a, b)
 	function Window:LoadConfig(name) return cfgLoad(name) end
 	function Window:DeleteConfig(name) return cfgDelete(name) end
 	function Window:ListConfigs() return listFiles(cfgFolder(), ".json") end
+	function Window:ExportCode(extraFn) return exportCode(extraFn) end
+	function Window:ImportCode(code, importFn) return importCode(code, importFn) end
 	function Window:SetLoading(progress, text) if loader then loader.set(progress, text) end end
 	function Window:FinishLoading() finishRequested = true end
 
